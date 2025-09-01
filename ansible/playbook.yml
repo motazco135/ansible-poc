@@ -1,0 +1,113 @@
+---
+# ============================================================
+# Stage 1 — Download artifact on server1 (staging)
+# ============================================================
+- name: Stage 1 — Download to server1 over SSH
+  hosts: staging
+  gather_facts: false
+  vars_files:
+    - group_vars/all.yml
+
+  pre_tasks:
+    - name: Ensure staging_dir exists
+      file:
+        path: "{{ staging_dir }}"
+        state: directory
+        mode: "0755"
+      become: true
+
+  tasks:
+
+    - name: Try to fetch .sha1
+      uri:
+        url: "{{ artifact_url }}.sha1"
+        return_content: true
+        status_code: [200, 404]
+      register: sha1_try
+
+    - name: Decide checksum algorithm and value
+      set_fact:
+        checksum_alg: >-
+          {{ 
+             'sha1'   if (sha1_try is defined and sha1_try.status == 200) else
+             '' }}
+        checksum_val_raw: >-
+          {{ 
+               sha1_try.content   if (sha1_try is defined and sha1_try.status   == 200) else ''  | default('') }}
+
+    - name: Normalize checksum (strip filename/whitespace)
+      set_fact:
+        checksum_val: "{{ checksum_val_raw | regex_replace('\\s.*$', '') | trim }}"
+
+    - name: Show which checksum will be used
+      debug:
+        msg: >-
+          Using checksum {{ checksum_alg }}:{{ checksum_val if checksum_alg else '(none available; downloading without validation)'}}
+
+    - name: Download artifact with checksum if available
+      get_url:
+        url: "{{ artifact_url }}"
+        dest: "{{ staging_dir }}/{{ artifact_name }}"
+        mode: "0644"
+        checksum: "{{ (checksum_alg ~ ':' ~ checksum_val) if checksum_alg else omit }}"
+      register: dl
+
+# ============================================================
+# Stage 2 — Fetch from server1 to control node
+# ============================================================
+- name: Stage 2 — Fetch from server1 to control node
+  hosts: staging
+  gather_facts: false
+  vars_files:
+    - group_vars/all.yml
+
+  pre_tasks:
+    - name: Ensure control stash exists (on control node)
+      delegate_to: localhost
+      file:
+        path: "{{ control_stash }}"
+        state: directory
+        mode: "0755"
+
+  tasks:
+    - name: Fetch the file to control node
+      fetch:
+        src: "{{ staging_dir }}/{{ artifact_name }}"
+        dest: "{{ control_stash }}/"
+        flat: true
+
+# ============================================================
+# Stage 3 — Push from control node to server2
+# ============================================================
+- name: Stage 3 — Push from control node to server2
+  hosts: target
+  gather_facts: false
+  vars_files:
+    - group_vars/all.yml
+
+  pre_tasks:
+    - name: Ensure target_dir exists
+      file:
+        path: "{{ target_dir }}"
+        state: directory
+        mode: "0755"
+      become: true
+
+  tasks:
+    - name: Copy artifact from control to server2
+      copy:
+        src: "{{ control_stash }}/{{ artifact_name }}"
+        dest: "{{ target_dir }}/{{ artifact_name }}"
+        mode: "0644"
+
+    - name: Verify on server2
+      stat:
+        path: "{{ target_dir }}/{{ artifact_name }}"
+      register: tgt
+
+    - name: Show final location
+      debug:
+        msg:
+          - "Transfer complete."
+          - "server2 path: {{ target_dir }}/{{ artifact_name }}"
+          - "On your PC: ./shared/target/{{ artifact_name }}"

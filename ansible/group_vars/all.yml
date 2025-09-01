@@ -1,0 +1,13 @@
+# Artifact to download on server1
+artifact_group: "com/google/guava"
+artifact_version: "33.4.8-jre"
+artifact_name: "guava-{{ artifact_version }}.jar"
+artifact_base: "https://repo1.maven.org/maven2/{{ artifact_group }}/guava/{{ artifact_version }}"
+artifact_url: "{{ artifact_base }}/{{ artifact_name }}"
+
+# Paths on the servers
+staging_dir: "/data/staging"
+target_dir: "/data/target"
+
+# Temporary path on control node for relay
+control_stash: "/workspace/.stash"

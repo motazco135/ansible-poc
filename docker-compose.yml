@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  ansible-control:
+    build:
+      context: ./control
+    container_name: ansible-control
+    working_dir: /workspace
+    volumes:
+      - ./ansible:/workspace
+      - ./sshkeys:/home/ansible/.ssh:rw   # bind mount host keys
+    networks:
+      - ansible_net
+    depends_on:
+      - server1
+      - server2
+    # CMD is "sleep infinity" from Dockerfile to keep it alive
+
+  server1:
+    build:
+      context: ./server
+    container_name: server1
+    hostname: server1
+    networks:
+      - ansible_net
+    ports:
+      - "2221:22"
+    volumes:
+      - ./sshkeys/authorized_keys:/home/ansible/.ssh/authorized_keys:ro
+    environment:
+      - TZ=UTC
+
+  server2:
+    build:
+      context: ./server
+    container_name: server2
+    hostname: server2
+    networks:
+      - ansible_net
+    ports:
+      - "2222:22"
+    volumes:
+      - ./sshkeys/authorized_keys:/home/ansible/.ssh/authorized_keys:ro
+      - ./shared/target:/data/target
+    environment:
+      - TZ=UTC
+
+networks:
+  ansible_net:
